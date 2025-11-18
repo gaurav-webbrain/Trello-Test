@@ -18,25 +18,35 @@ jobs:
           gh api \
             repos/gaurav-webbrain/Trello-Test/issues \
             --paginate > issues.json
+      - name: Debug - Show issues
+        run: |
+          echo "Total issues found:"
+          jq 'length' issues.json
+          echo "First issue body:"
+          jq -r '.[0].body // "No body"' issues.json | head -20
       - name: Generate CSV
         run: |
           echo "Issue,Title,Start,Stop,Hours" > report.csv
           jq -r '
-          def parse_datetime:
-            sub("Z$"; "+00:00") | fromdateiso8601;
-          
           .[] | 
           select(.body != null) |
-          select(.body | contains("Start:")) |
-          select(.body | contains("Stop:")) |
-          {
-            number: .number,
-            title: .title,
-            start: (.body | split("Start: ")[1] | split("\n")[0] | split(" # ")[0] | ltrimstr(" ") | rtrimstr(" ")),
-            stop: (.body | split("Stop: ")[1] | split("\n")[0] | split(" # ")[0] | ltrimstr(" ") | rtrimstr(" "))
-          } |
-          "\(.number),\"\(.title)\",\(.start),\(.stop),\(((.stop | parse_datetime) - (.start | parse_datetime)) / 3600)"
+          select(.body | test("Start:")) |
+          select(.body | test("Stop:")) |
+          . as $issue |
+          (.body | capture("Start:\\s*(?<start>[^\n#]+)") | .start | gsub("^\\s+|\\s+$"; "")) as $start |
+          (.body | capture("Stop:\\s*(?<stop>[^\n#]+)") | .stop | gsub("^\\s+|\\s+$"; "")) as $stop |
+          try (
+            "\($issue.number),\"\($issue.title)\",\($start),\($stop),\((($stop | sub("Z$"; "+00:00") | fromdateiso8601) - ($start | sub("Z$"; "+00:00") | fromdateiso8601)) / 3600)"
+          ) catch (
+            "\($issue.number),\"\($issue.title)\",\($start),\($stop),ERROR"
+          )
           ' issues.json >> report.csv
+      - name: Debug - Show CSV
+        run: |
+          echo "CSV contents:"
+          cat report.csv
+          echo "CSV line count:"
+          wc -l report.csv
       - name: Upload CSV
         uses: actions/upload-artifact@v4
         with:
