@@ -3,7 +3,7 @@ name: Monthly Time Report
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 1 * *"    # runs on 1st of every month
+    - cron: "0 0 1 * *"   # 1st of every month
 
 jobs:
   report:
@@ -13,18 +13,21 @@ jobs:
       GH_TOKEN: ${{ github.token }}
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
 
       - name: Fetch Issues
         run: |
           gh api \
             repos/${{ github.repository }}/issues \
             --paginate \
-            --jq '.[] | {number, title, body}' > issues.json
+            --jq '.[] | {number, title, body}' \
+            > issues.json
 
       - name: Generate CSV Report
         run: |
@@ -40,7 +43,11 @@ jobs:
                 ($mstart.captures[0].string) as $start |
                 ($mstop.captures[0].string) as $stop |
                 (
-                  (($stop | fromdate) - ($start | fromdate)) / 3600
+                  (
+                    ($stop | fromdate)
+                    -
+                    ($start | fromdate)
+                  ) / 3600
                 ) as $hours |
                 "\($n),\"\($t)\",\($start),\($stop),\($hours)"
               else empty end
