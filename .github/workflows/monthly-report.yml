@@ -11,47 +11,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
       - name: Fetch Issues
         run: |
           gh api \
             repos/gaurav-webbrain/Trello-Test/issues \
-            --paginate \
-            --jq '.' > issues.json
-      - name: Generate CSV with Python
+            --paginate > issues.json
+      - name: Generate CSV
         run: |
-          python3 << 'PYTHON_SCRIPT'
-          import json
-          import re
-          from datetime import datetime
+          echo "Issue,Title,Start,Stop,Hours" > report.csv
+          jq -r '
+          def parse_datetime:
+            sub("Z$"; "+00:00") | fromdateiso8601;
           
-          with open('issues.json', 'r') as f:
-              issues = json.load(f)
-          
-          with open('report.csv', 'w') as out:
-              out.write('Issue,Title,Start,Stop,Hours\n')
-              
-              for issue in issues:
-                  body = issue.get('body', '')
-                  if not body:
-                      continue
-                  
-                  start_match = re.search(r'Start: ([0-9A-Za-z:+\- ]+)', body)
-                  stop_match = re.search(r'Stop: ([0-9A-Za-z:+\- ]+)', body)
-                  
-                  if start_match and stop_match:
-                      start_str = start_match.group(1).strip()
-                      stop_str = stop_match.group(1).strip()
-                      
-                      try:
-                          start = datetime.fromisoformat(start_str.replace('Z', '+00:00'))
-                          stop = datetime.fromisoformat(stop_str.replace('Z', '+00:00'))
-                          hours = (stop - start).total_seconds() / 3600
-                          
-                          title = issue['title'].replace('"', '""')
-                          out.write(f'{issue["number"]},"{title}",{start_str},{stop_str},{hours:.2f}\n')
-                      except Exception as e:
-                          print(f"Skipping issue {issue['number']}: {e}")
-          PYTHON_SCRIPT
+          .[] | 
+          select(.body != null) |
+          select(.body | contains("Start:")) |
+          select(.body | contains("Stop:")) |
+          {
+            number: .number,
+            title: .title,
+            start: (.body | split("Start: ")[1] | split("\n")[0] | split(" # ")[0] | ltrimstr(" ") | rtrimstr(" ")),
+            stop: (.body | split("Stop: ")[1] | split("\n")[0] | split(" # ")[0] | ltrimstr(" ") | rtrimstr(" "))
+          } |
+          "\(.number),\"\(.title)\",\(.start),\(.stop),\(((.stop | parse_datetime) - (.start | parse_datetime)) / 3600)"
+          ' issues.json >> report.csv
       - name: Upload CSV
         uses: actions/upload-artifact@v4
         with:
