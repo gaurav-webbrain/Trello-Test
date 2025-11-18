@@ -1,0 +1,53 @@
+name: Monthly Time Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 1 * *"    # runs on 1st of every month
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Fetch Issues
+        run: |
+          gh api \
+            repos/${{ github.repository }}/issues \
+            --paginate \
+            --jq '.[] | {number, title, body}' > issues.json
+
+      - name: Generate CSV Report
+        run: |
+          echo "Issue,Title,Start,Stop,Hours" > report.csv
+
+          jq -r '
+            .[] as $i
+            | ($i.body | match("Start: ([0-9A-Za-z:+\\- ]+)"))? as $mstart
+            | ($i.body | match("Stop: ([0-9A-Za-z:+\\- ]+)"))? as $mstop
+            | if $mstart and $mstop then
+                $i.number as $n |
+                $i.title as $t |
+                ($mstart.captures[0].string) as $start |
+                ($mstop.captures[0].string) as $stop |
+                (
+                  (($stop | fromdate) - ($start | fromdate)) / 3600
+                ) as $hours |
+                "\($n),\"\($t)\",\($start),\($stop),\($hours)"
+              else empty end
+          ' issues.json >> report.csv
+
+      - name: Upload Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: monthly-report
+          path: report.csv
