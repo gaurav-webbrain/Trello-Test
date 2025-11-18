@@ -19,13 +19,12 @@ jobs:
             repos/gaurav-webbrain/Trello-Test/issues \
             --paginate \
             --jq '.' > issues.json
-      - name: Generate CSV
+      - name: Create jq script
         run: |
-          echo "Issue,Title,Start,Stop,Hours" > report.csv
-          cat << 'EOF' | jq -r -f - issues.json >> report.csv
+          cat > process.jq << 'JQSCRIPT'
           .[] as $i |
-          ($i.body | match("Start: ([0-9A-Za-z:+\\- ]+)"))? as $mstart |
-          ($i.body | match("Stop: ([0-9A-Za-z:+\\- ]+)"))? as $mstop |
+          ($i.body | match("Start: ([0-9A-Za-z:+ -]+)"))? as $mstart |
+          ($i.body | match("Stop: ([0-9A-Za-z:+ -]+)"))? as $mstop |
           if $mstart and $mstop then
             $i.number as $n |
             $i.title as $t |
@@ -38,7 +37,11 @@ jobs:
             "\($n),\"\($t)\",\($start),\($stop),\($hours)"
           else empty
           end
-          EOF
+          JQSCRIPT
+      - name: Generate CSV
+        run: |
+          echo "Issue,Title,Start,Stop,Hours" > report.csv
+          jq -r -f process.jq issues.json >> report.csv
       - name: Upload CSV
         uses: actions/upload-artifact@v4
         with:
