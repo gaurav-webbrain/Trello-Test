@@ -38,15 +38,21 @@ jobs:
             select(.body != null) |
             . as $issue |
 
-            # Extract Start (handles CR, LF, timezone, ISO8601)
-            (.body | match("(?im)start\\s*[:\\-]\\s*(?<val>[^\\r\\n]+)") 
-               | .captures[0].val 
-               | gsub("\\s+$"; "")) as $start |
+            # Ultra-flexible extraction for Start
+            (.body
+              | gsub("\\u00A0"; " ")                          # fix NBSP
+              | gsub("\r"; "\n")                              # unify CRLF
+              | match("(?is)start\\s*[:\\-]\\s*(?<val>[0-9T:+\\-\\.]+)")
+              | .captures[0].val
+            ) as $start |
 
-            # Extract Stop (same pattern)
-            (.body | match("(?im)stop\\s*[:\\-]\\s*(?<val>[^\\r\\n]+)") 
-               | .captures[0].val 
-               | gsub("\\s+$"; "")) as $stop |
+            # Ultra-flexible extraction for Stop
+            (.body
+              | gsub("\\u00A0"; " ")
+              | gsub("\r"; "\n")
+              | match("(?is)stop\\s*[:\\-]\\s*(?<val>[0-9T:+\\-\\.]+)")
+              | .captures[0].val
+            ) as $stop |
 
             try (
               "\($issue.number),\"\($issue.title)\",\($start),\($stop),\((($stop | fromdateiso8601) - ($start | fromdateiso8601)) / 3600)"
