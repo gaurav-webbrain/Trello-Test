@@ -11,24 +11,47 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
       - name: Fetch Issues
         run: |
           gh api \
             repos/gaurav-webbrain/Trello-Test/issues \
             --paginate \
             --jq '.' > issues.json
-      - name: Generate CSV
+      - name: Generate CSV with Python
         run: |
-          echo "Issue,Title,Start,Stop,Hours" > report.csv
-          jq -r '.[] | 
-            select(.body | test("Start:.*Stop:")) |
-            . as $i |
-            (.body | capture("Start: (?<start>[0-9A-Za-z:+ -]+)") | .start) as $start |
-            (.body | capture("Stop: (?<stop>[0-9A-Za-z:+ -]+)") | .stop) as $stop |
-            "\($i.number),\"\($i.title)\",\($start),\($stop),\((($stop | fromdate) - ($start | fromdate)) / 3600)"
-          ' issues.json >> report.csv
+          python3 << 'PYTHON_SCRIPT'
+          import json
+          import re
+          from datetime import datetime
+          
+          with open('issues.json', 'r') as f:
+              issues = json.load(f)
+          
+          with open('report.csv', 'w') as out:
+              out.write('Issue,Title,Start,Stop,Hours\n')
+              
+              for issue in issues:
+                  body = issue.get('body', '')
+                  if not body:
+                      continue
+                  
+                  start_match = re.search(r'Start: ([0-9A-Za-z:+\- ]+)', body)
+                  stop_match = re.search(r'Stop: ([0-9A-Za-z:+\- ]+)', body)
+                  
+                  if start_match and stop_match:
+                      start_str = start_match.group(1).strip()
+                      stop_str = stop_match.group(1).strip()
+                      
+                      try:
+                          start = datetime.fromisoformat(start_str.replace('Z', '+00:00'))
+                          stop = datetime.fromisoformat(stop_str.replace('Z', '+00:00'))
+                          hours = (stop - start).total_seconds() / 3600
+                          
+                          title = issue['title'].replace('"', '""')
+                          out.write(f'{issue["number"]},"{title}",{start_str},{stop_str},{hours:.2f}\n')
+                      except Exception as e:
+                          print(f"Skipping issue {issue['number']}: {e}")
+          PYTHON_SCRIPT
       - name: Upload CSV
         uses: actions/upload-artifact@v4
         with:
