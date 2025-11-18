@@ -11,42 +11,48 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Fetch Issues
         run: |
           gh api \
             repos/gaurav-webbrain/Trello-Test/issues \
             --paginate > issues.json
+
       - name: Debug - Show issues
         run: |
           echo "Total issues found:"
           jq 'length' issues.json
           echo "First issue body:"
           jq -r '.[0].body // "No body"' issues.json | head -20
+
       - name: Generate CSV
         run: |
           echo "Issue,Title,Start,Stop,Hours" > report.csv
           jq -r '
-          .[] | 
-          select(.body != null) |
-          select(.body | test("Start:")) |
-          select(.body | test("Stop:")) |
-          . as $issue |
-          (.body | capture("Start:\\s*(?<start>[^\n#]+)") | .start | gsub("^\\s+|\\s+$"; "")) as $start |
-          (.body | capture("Stop:\\s*(?<stop>[^\n#]+)") | .stop | gsub("^\\s+|\\s+$"; "")) as $stop |
-          try (
-            "\($issue.number),\"\($issue.title)\",\($start),\($stop),\((($stop | sub("Z$"; "+00:00") | fromdateiso8601) - ($start | sub("Z$"; "+00:00") | fromdateiso8601)) / 3600)"
-          ) catch (
-            "\($issue.number),\"\($issue.title)\",\($start),\($stop),ERROR"
-          )
+            .[] |
+            select(.body != null) |
+            . as $issue |
+            # Extract Start (case-insensitive, ":" or "-", flexible spacing)
+            (.body | match("(?im)start\\s*[:\\-]\\s*(?<val>[^\\n]+)") | .captures[0].val | gsub("\\s+$"; "")) as $start |
+            # Extract Stop (same rules)
+            (.body | match("(?im)stop\\s*[:\\-]\\s*(?<val>[^\\n]+)") | .captures[0].val | gsub("\\s+$"; "")) as $stop |
+            try (
+              "\($issue.number),\"\($issue.title)\",\($start),\($stop),\((($stop | sub("Z$"; "+00:00") | fromdateiso8601) - ($start | sub("Z$"; "+00:00") | fromdateiso8601)) / 3600)"
+            ) catch (
+              "\($issue.number),\"\($issue.title)\",\($start),\($stop),ERROR"
+            )
           ' issues.json >> report.csv
+
       - name: Debug - Show CSV
         run: |
           echo "CSV contents:"
           cat report.csv
           echo "CSV line count:"
           wc -l report.csv
+
       - name: Upload CSV
         uses: actions/upload-artifact@v4
         with:
