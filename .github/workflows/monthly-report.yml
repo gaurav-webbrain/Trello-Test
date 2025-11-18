@@ -33,32 +33,27 @@ jobs:
       - name: Generate CSV
         run: |
           echo "Issue,Title,Start,Stop,Hours" > report.csv
+
           jq -r '
             .[] |
-            select(.body != null) |
-            . as $issue |
-
-            # Ultra-flexible extraction for Start
-            (.body
-              | gsub("\\u00A0"; " ")                          # fix NBSP
-              | gsub("\r"; "\n")                              # unify CRLF
-              | match("(?is)start\\s*[:\\-]\\s*(?<val>[0-9T:+\\-\\.]+)")
-              | .captures[0].val
-            ) as $start |
-
-            # Ultra-flexible extraction for Stop
-            (.body
-              | gsub("\\u00A0"; " ")
-              | gsub("\r"; "\n")
-              | match("(?is)stop\\s*[:\\-]\\s*(?<val>[0-9T:+\\-\\.]+)")
-              | .captures[0].val
-            ) as $stop |
-
-            try (
-              "\($issue.number),\"\($issue.title)\",\($start),\($stop),\((($stop | fromdateiso8601) - ($start | fromdateiso8601)) / 3600)"
-            ) catch (
-              "\($issue.number),\"\($issue.title)\",\($start),\($stop),ERROR"
-            )
+            . as $i |
+            ($i.body
+              | gsub("\\*"; "")
+              | gsub("`"; "")
+              | gsub("\r"; "")
+              | gsub("\n"; " ")
+              | gsub(" +"; " ")
+            ) as $clean |
+            
+            ($clean | match("Start[:\\- ]+([0-9TZ:+\\- ]{8,32})")? | .captures[0].string) as $start |
+            ($clean | match("Stop[:\\- ]+([0-9TZ:+\\- ]{8,32})")? | .captures[0].string) as $stop |
+            
+            ($start | fromdateiso8601? // 0) as $sEpoch |
+            ($stop  | fromdateiso8601? // 0) as $eEpoch |
+            
+            ($eEpoch - $sEpoch) / 3600 as $hours |
+            
+            "\($i.number),\($i.title),\($start // ""),\($stop // ""),\($hours // "")"
           ' issues.json >> report.csv
 
       - name: Debug - Show CSV
