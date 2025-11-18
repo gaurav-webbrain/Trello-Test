@@ -1,71 +1,44 @@
-# This is a basic workflow to help you get started with Actions
+monthly_report:
+  name: Monthly Time Report
+  runs-on: ubuntu-latest
 
-name: CI
+  steps:
+    - uses: actions/checkout@v4
 
-# Controls when the workflow will run
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    - name: Install jq
+      run: sudo apt-get install -y jq
 
-  workflow_dispatch:      # manual run
-  schedule:
-    - cron: "0 0 1 * *"   # monthly (first day)
+    - name: Fetch issues
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh api \
+          repos/${{ github.repository }}/issues \
+          --paginate \
+          --jq '.[] | {number, title, body}' > issues.json
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    - name: Build CSV
+      run: |
+        echo "Issue,Title,Start,Stop,Hours" > report.csv
 
-      - name: Run a one-line script
-        run: echo Hello, world!
+        cat issues.json | jq -r '
+          . as $i
+          | ($i.body | capture("Start: (?<start>[0-9A-Za-z: +\\-]+)"))? as $s
+          | ($i.body | capture("Stop: (?<stop>[0-9A-Za-z: +\\-]+)"))? as $e
+          | if $s and $e then
+              .number as $n |
+              .title as $t |
+              ($s.start) as $start |
+              ($e.stop) as $stop |
+              (
+                (( ($e.stop | fromdate) - ($s.start | fromdate) ) / 3600)
+              ) as $hours |
+              "\($n),\"\($t)\",\($start),\($stop),\($hours)"
+            else empty end
+        ' >> report.csv
 
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
-
-  monthly_report:
-    name: Monthly Time Report
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
-      - name: Fetch issues
-        run: |
-          gh api \
-            repos/${{ github.repository }}/issues \
-            --paginate \
-            --jq '.[] | {number, title, body}' > issues.json
-
-      - name: Build CSV
-        run: |
-          echo "Issue,Title,Start,Stop,Hours" > report.csv
-
-          cat issues.json | jq -r '
-            . as $i
-            | ($i.body | capture("Start: (?<start>[0-9A-Za-z: +\\-]+)"))? as $s
-            | ($i.body | capture("Stop: (?<stop>[0-9A-Za-z: +\\-]+)"))? as $e
-            | if $s and $e then
-                .number as $n |
-                .title as $t |
-                ($s.start) as $start |
-                ($e.stop) as $stop |
-                (
-                  (( ($e.stop | fromdate) - ($s.start | fromdate) ) / 3600)
-                ) as $hours |
-                "\($n),\"\($t)\",\($start),\($stop),\($hours)"
-              else empty end
-          ' >> report.csv
-
-      - name: Upload report
-        uses: actions/upload-artifact@v4
-        with:
-          name: monthly-time-report
-          path: report.csv
+    - name: Upload report
+      uses: actions/upload-artifact@v4
+      with:
+        name: monthly-time-report
+        path: report.csv
