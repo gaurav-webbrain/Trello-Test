@@ -3,11 +3,13 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 0 1 * *"
+
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,12 +37,19 @@ jobs:
             .[] |
             select(.body != null) |
             . as $issue |
-            # Extract Start (case-insensitive, ":" or "-", flexible spacing)
-            (.body | match("(?im)start\\s*[:\\-]\\s*(?<val>[^\\n]+)") | .captures[0].val | gsub("\\s+$"; "")) as $start |
-            # Extract Stop (same rules)
-            (.body | match("(?im)stop\\s*[:\\-]\\s*(?<val>[^\\n]+)") | .captures[0].val | gsub("\\s+$"; "")) as $stop |
+
+            # Extract Start (handles CR, LF, timezone, ISO8601)
+            (.body | match("(?im)start\\s*[:\\-]\\s*(?<val>[^\\r\\n]+)") 
+               | .captures[0].val 
+               | gsub("\\s+$"; "")) as $start |
+
+            # Extract Stop (same pattern)
+            (.body | match("(?im)stop\\s*[:\\-]\\s*(?<val>[^\\r\\n]+)") 
+               | .captures[0].val 
+               | gsub("\\s+$"; "")) as $stop |
+
             try (
-              "\($issue.number),\"\($issue.title)\",\($start),\($stop),\((($stop | sub("Z$"; "+00:00") | fromdateiso8601) - ($start | sub("Z$"; "+00:00") | fromdateiso8601)) / 3600)"
+              "\($issue.number),\"\($issue.title)\",\($start),\($stop),\((($stop | fromdateiso8601) - ($start | fromdateiso8601)) / 3600)"
             ) catch (
               "\($issue.number),\"\($issue.title)\",\($start),\($stop),ERROR"
             )
