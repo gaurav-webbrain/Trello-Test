@@ -1,75 +1,57 @@
-name: CI
+name: Monthly Time Report
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
   schedule:
-    - cron: "0 0 1 * *"   # First day of every month
+    - cron: "0 0 1 * *"
 
 jobs:
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
-
-  monthly_report:
-    name: Monthly Time Report
+  report:
     runs-on: ubuntu-latest
 
+    env:
+      GH_TOKEN: ${{ github.token }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install jq
         run: sudo apt-get install -y jq
 
       - name: Fetch issues
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api \
             repos/${{ github.repository }}/issues \
             --paginate \
             --jq '.[] | {number, title, body}' > issues.json
 
-- name: Build CSV
-  run: |
-    echo "Issue,Title,Start,Stop,Hours" > report.csv
+      - name: Build CSV
+        run: |
+          echo "Issue,Title,Start,Stop,Hours" > report.csv
 
-    cat issues.json | jq -r '
-      . as $i
-      | ($i.body | match("Start: ([0-9A-Za-z:+\\- ]+)"))? as $mstart
-      | ($i.body | match("Stop: ([0-9A-Za-z:+\\- ]+)"))? as $mstop
-      | if $mstart and $mstop then
-          .number as $n |
-          .title as $t |
-          ($mstart.captures[0].string) as $start |
-          ($mstop.captures[0].string) as $stop |
-          (
-            (
-              ( $stop | fromdate )
-              -
-              ( $start | fromdate )
-            ) / 3600
-          ) as $hours |
-          "\($n),\"\($t)\",\($start),\($stop),\($hours)"
-        else empty end
-    ' >> report.csv
+          jq -r '
+            . as $i
+            | ($i.body | match("Start: ([0-9A-Za-z:+\\- ]+)"))? as $mstart
+            | ($i.body | match("Stop: ([0-9A-Za-z:+\\- ]+)"))? as $mstop
+            | if $mstart and $mstop then
+                .number as $n |
+                .title as $t |
+                ($mstart.captures[0].string) as $start |
+                ($mstop.captures[0].string) as $stop |
+                (
+                  (
+                    ( $stop | fromdate )
+                    -
+                    ( $start | fromdate )
+                  ) / 3600
+                ) as $hours |
+                "\($n),\"\($t)\",\($start),\($stop),\($hours)"
+              else empty end
+          ' issues.json >> report.csv
 
-
-      - name: Upload report
+      - name: Upload CSV
         uses: actions/upload-artifact@v4
         with:
-          name: monthly-time-report
+          name: monthly-report
           path: report.csv
