@@ -19,29 +19,16 @@ jobs:
             repos/gaurav-webbrain/Trello-Test/issues \
             --paginate \
             --jq '.' > issues.json
-      - name: Create jq script
-        run: |
-          cat > process.jq << 'JQSCRIPT'
-          .[] as $i |
-          ($i.body | match("Start: ([0-9A-Za-z:+ -]+)"))? as $mstart |
-          ($i.body | match("Stop: ([0-9A-Za-z:+ -]+)"))? as $mstop |
-          if $mstart and $mstop then
-            $i.number as $n |
-            $i.title as $t |
-            ($mstart.captures[0].string) as $start |
-            ($mstop.captures[0].string) as $stop |
-            (
-              (($stop | fromdate) -
-               ($start | fromdate)) / 3600
-            ) as $hours |
-            "\($n),\"\($t)\",\($start),\($stop),\($hours)"
-          else empty
-          end
-          JQSCRIPT
       - name: Generate CSV
         run: |
           echo "Issue,Title,Start,Stop,Hours" > report.csv
-          jq -r -f process.jq issues.json >> report.csv
+          jq -r '.[] | 
+            select(.body | test("Start:.*Stop:")) |
+            . as $i |
+            (.body | capture("Start: (?<start>[0-9A-Za-z:+ -]+)") | .start) as $start |
+            (.body | capture("Stop: (?<stop>[0-9A-Za-z:+ -]+)") | .stop) as $stop |
+            "\($i.number),\"\($i.title)\",\($start),\($stop),\((($stop | fromdate) - ($start | fromdate)) / 3600)"
+          ' issues.json >> report.csv
       - name: Upload CSV
         uses: actions/upload-artifact@v4
         with:
