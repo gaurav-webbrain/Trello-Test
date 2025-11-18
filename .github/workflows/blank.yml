@@ -43,25 +43,30 @@ jobs:
             --paginate \
             --jq '.[] | {number, title, body}' > issues.json
 
-      - name: Build CSV
-        run: |
-          echo "Issue,Title,Start,Stop,Hours" > report.csv
+- name: Build CSV
+  run: |
+    echo "Issue,Title,Start,Stop,Hours" > report.csv
 
-          cat issues.json | jq -r '
-            . as $i
-            | ($i.body | capture("Start: (?<start>[0-9A-Za-z: +\\-]+)"))? as $s
-            | ($i.body | capture("Stop: (?<stop>[0-9A-Za-z: +\\-]+)"))? as $e
-            | if $s and $e then
-                .number as $n |
-                .title as $t |
-                ($s.start) as $start |
-                ($e.stop) as $stop |
-                (
-                  (( ($e.stop | fromdate) - ($s.start | fromdate) ) / 3600)
-                ) as $hours |
-                "\($n),\"\($t)\",\($start),\($stop),\($hours)"
-              else empty end
-          ' >> report.csv
+    cat issues.json | jq -r '
+      . as $i
+      | ($i.body | match("Start: ([0-9A-Za-z:+\\- ]+)"))? as $mstart
+      | ($i.body | match("Stop: ([0-9A-Za-z:+\\- ]+)"))? as $mstop
+      | if $mstart and $mstop then
+          .number as $n |
+          .title as $t |
+          ($mstart.captures[0].string) as $start |
+          ($mstop.captures[0].string) as $stop |
+          (
+            (
+              ( $stop | fromdate )
+              -
+              ( $start | fromdate )
+            ) / 3600
+          ) as $hours |
+          "\($n),\"\($t)\",\($start),\($stop),\($hours)"
+        else empty end
+    ' >> report.csv
+
 
       - name: Upload report
         uses: actions/upload-artifact@v4
