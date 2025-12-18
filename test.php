@@ -9,7 +9,7 @@ $array = array(
 	"PHP Version" => phpversion()
 );
 
-echo 'Added chenges to reflact commit';
+echo 'Added chenges to reflact commit to check';
 foreach ($array as $key => $value) {
 	echo $key . "\t=>\t" . $value . "\n";
 }
